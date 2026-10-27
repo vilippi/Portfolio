@@ -1,11 +1,13 @@
 "use client";
 
-import { useRef, useState } from "react";
-import Image from "next/image";
+import { useEffect, useRef, useState } from "react";
+import Image, { getImageProps } from "next/image";
 import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useGSAP } from "@gsap/react";
-import { projects } from "@/lib/content";
+import { person, projects } from "@/lib/content";
+import { interTight } from "@/lib/fonts";
+import type { NotebookScene } from "@/components/three/notebook-scene";
 
 gsap.registerPlugin(ScrollTrigger, useGSAP);
 
@@ -22,12 +24,84 @@ function scaleRibbon(sx: number, sy: number) {
   return RIBBON.replace(/-?\d+(\.\d+)?/g, (v) => (Number(v) * (i++ % 2 === 0 ? sx : sy)).toFixed(1));
 }
 
-const LIST_SHARE = 0.86; // parte do pin em que a lista anda; o resto completa o risco
+// Pin em alturas de tela: a lista anda, depois o notebook fecha e sobe
+// enquanto o risco termina de sair pela direita.
+const LIST_VH = 0.55 * (projects.length - 1);
+const OUTRO_VH = 1.1;
+const LIST_SHARE = LIST_VH / (LIST_VH + OUTRO_VH);
 
 export default function Projects() {
   const root = useRef<HTMLElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const [active, setActive] = useState(0);
   const activeRef = useRef(0);
+  const outroRef = useRef(0);
+  const notebook = useRef<NotebookScene | null>(null);
+  const [three, setThree] = useState<"loading" | "ready" | "failed">("loading");
+
+  // O three.js baixa depois da hidratação, num chunk separado; a cena só é
+  // criada quando a seção está chegando, para não disputar com o hero. Sem
+  // WebGL a pilha de imagens antiga volta como fallback.
+  useEffect(() => {
+    const section = root.current!;
+    const stage = section.querySelector<HTMLElement>("[data-proj-stage]")!;
+    const anchor = section.querySelector<HTMLElement>("[data-proj-fit]")!;
+    const canvas = canvasRef.current!;
+    if (anchor.getClientRects().length === 0) return; // preview escondido (celular com reduced motion)
+
+    let alive = true;
+    let created: NotebookScene | null = null;
+    const images = projects.map((p) => getImageProps({ src: p.image, alt: "", width: 600, height: 375 }).props.src);
+    const mod = import("@/components/three/notebook-scene");
+    let stopWatching = () => {};
+    const near = new Promise<void>((resolve) => {
+      const io = new IntersectionObserver(
+        ([e]) => {
+          if (!e.isIntersecting) return;
+          io.disconnect();
+          resolve();
+        },
+        { rootMargin: "150% 0px" },
+      );
+      io.observe(section);
+      stopWatching = () => io.disconnect();
+    });
+    Promise.all([mod, near])
+      .then(([{ createNotebookScene }]) =>
+        createNotebookScene({
+          canvas,
+          stage,
+          anchor,
+          images,
+          initial: activeRef.current,
+          fontFamily: interTight.style.fontFamily,
+          monogram: person.monogram,
+          reduced: window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+        }),
+      )
+      .then((scene) => {
+        if (!alive) return scene.dispose();
+        created = scene;
+        notebook.current = scene;
+        scene.setOutro(outroRef.current);
+        scene.setProject(activeRef.current);
+        setThree("ready");
+      })
+      .catch(() => {
+        if (alive) setThree("failed");
+      });
+
+    return () => {
+      alive = false;
+      stopWatching();
+      created?.dispose();
+      notebook.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    notebook.current?.setProject(active);
+  }, [active]);
 
   useGSAP(
     () => {
@@ -40,6 +114,7 @@ export default function Projects() {
         const anchor = section.querySelector<HTMLElement>("[data-proj-anchor]")!;
         const items = gsap.utils.toArray<HTMLElement>("[data-proj-item]", section);
         const path = section.querySelector<SVGPathElement>("[data-proj-ribbon]")!;
+        const labels = section.querySelector<HTMLElement>("[data-proj-labels]")!;
         const svg = path.ownerSVGElement!;
         const n = items.length;
 
@@ -102,8 +177,14 @@ export default function Projects() {
           // Ponta do risco um pouco abaixo do item ativo.
           const tipTrackY = (pos + 0.5) * itemH + itemH * 0.75;
           let len = lengthAtY(tipTrackY - svgTop);
-          if (p > LIST_SHARE) len += (total - len) * ((p - LIST_SHARE) / (1 - LIST_SHARE));
+          const outroT = p > LIST_SHARE ? (p - LIST_SHARE) / (1 - LIST_SHARE) : 0;
+          len += (total - len) * outroT;
           path.style.strokeDashoffset = String(total - len);
+
+          // Fim da lista: o notebook fecha e sobe; as labels somem antes.
+          outroRef.current = outroT;
+          notebook.current?.setOutro(outroT);
+          labels.style.opacity = String(1 - Math.min(1, outroT / 0.3));
 
           const idx = Math.round(pos);
           if (idx !== activeRef.current) {
@@ -118,7 +199,7 @@ export default function Projects() {
         ScrollTrigger.create({
           trigger: section,
           start: "top top",
-          end: () => `+=${window.innerHeight * (0.55 * (n - 1) + 0.6)}`,
+          end: () => `+=${window.innerHeight * (LIST_VH + OUTRO_VH)}`,
           pin: stage,
           anticipatePin: 1,
           invalidateOnRefresh: true,
@@ -129,18 +210,16 @@ export default function Projects() {
           onUpdate: (self) => render(self.progress),
         });
 
-        // Inclinação do preview acompanhando o mouse.
-        const rx = gsap.quickTo("[data-proj-tilt]", "rotationX", { duration: 0.8, ease: "power3.out" });
-        const ry = gsap.quickTo("[data-proj-tilt]", "rotationY", { duration: 0.8, ease: "power3.out" });
+        // O notebook inclina acompanhando o mouse.
         const onMove = (e: PointerEvent) => {
           const r = stage.getBoundingClientRect();
-          ry(((e.clientX - r.left) / r.width - 0.5) * 10 - 6);
-          rx(((e.clientY - r.top) / r.height - 0.5) * -8 + 2);
+          notebook.current?.setPointer(((e.clientX - r.left) / r.width - 0.5) * 2, ((e.clientY - r.top) / r.height - 0.5) * 2);
         };
         stage.addEventListener("pointermove", onMove);
 
         return () => {
           stage.removeEventListener("pointermove", onMove);
+          labels.style.opacity = "";
           items.forEach((el) => {
             el.style.transform = "";
             el.style.opacity = "";
@@ -158,7 +237,9 @@ export default function Projects() {
 
   // Sem movimento não há scroll dirigindo a lista: o preview segue o hover/foco.
   const pickWithoutMotion = (i: number) => {
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) setActive(i);
+    if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    activeRef.current = i;
+    setActive(i);
   };
 
   const current = projects[active] ?? projects[0];
@@ -211,34 +292,41 @@ export default function Projects() {
           </div>
         </div>
 
-        {/* Preview do projeto ativo */}
-        <div data-proj-preview className="pointer-events-none absolute right-[13vw] top-1/2 w-[min(23.5vw,440px)] -translate-y-1/2 perspective-distant max-md:left-1/2 max-md:right-auto max-md:top-[12svh] max-md:w-[min(76vw,380px)] max-md:-translate-x-1/2 max-md:translate-y-0 motion-reduce:top-[16svh] motion-reduce:translate-y-0 max-md:motion-reduce:hidden">
-          <div data-proj-tilt className="transform-3d transform-[rotateY(-6deg)_rotateX(2deg)]">
-            <div className="mb-2 flex justify-between text-[11px] font-bold uppercase tracking-[0.06em] text-muted">
-              <span aria-live="polite">{current.date}</span>
-              <span>Preview</span>
-            </div>
-            <div className="relative aspect-4/3 overflow-clip bg-bg-raised">
-              {projects.map((p, i) => (
-                <Image
-                  key={p.title}
-                  src={p.image}
-                  alt={i === active ? `Preview de ${p.title}` : ""}
-                  aria-hidden={i === active ? undefined : true}
-                  fill
-                  loading="eager"
-                  sizes="(max-width: 768px) 76vw, 24vw"
-                  className="object-cover transition-[clip-path,transform] duration-900 ease-[cubic-bezier(0.76,0,0.24,1)]"
-                  style={{
-                    clipPath: i === active ? "inset(0% 0% 0% 0%)" : i < active ? "inset(0% 0% 100% 0%)" : "inset(100% 0% 0% 0%)",
-                    transform: i === active ? "scale(1)" : "scale(1.12)",
-                    zIndex: i === active ? 2 : 1,
-                  }}
-                />
-              ))}
-            </div>
+        {/* Preview do projeto ativo: a caixa diz onde o notebook 3D fica */}
+        <div data-proj-preview className="pointer-events-none absolute right-[max(7vw,96px)] top-1/2 w-[min(36vw,680px)] -translate-y-1/2 max-md:left-1/2 max-md:right-auto max-md:top-[10svh] max-md:w-[min(86vw,440px)] max-md:-translate-x-1/2 max-md:translate-y-0 motion-reduce:top-[16svh] motion-reduce:translate-y-0 max-md:motion-reduce:hidden">
+          <div data-proj-labels className="mb-2 flex justify-between text-[11px] font-bold uppercase tracking-[0.06em] text-muted">
+            <span aria-live="polite">{current.date}</span>
+            <span>Preview</span>
+          </div>
+          <div data-proj-fit role="img" aria-label={`Preview de ${current.title}`} className="relative aspect-6/5">
+            {three === "failed" && (
+              <div className="absolute inset-[6%] overflow-clip bg-bg-raised">
+                {projects.map((p, i) => (
+                  <Image
+                    key={p.title}
+                    src={p.image}
+                    alt=""
+                    fill
+                    loading="eager"
+                    sizes="(max-width: 768px) 76vw, 32vw"
+                    className="object-cover transition-[clip-path,transform] duration-900 ease-[cubic-bezier(0.76,0,0.24,1)]"
+                    style={{
+                      clipPath: i === active ? "inset(0% 0% 0% 0%)" : i < active ? "inset(0% 0% 100% 0%)" : "inset(100% 0% 0% 0%)",
+                      transform: i === active ? "scale(1)" : "scale(1.12)",
+                      zIndex: i === active ? 2 : 1,
+                    }}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         </div>
+
+        <canvas
+          ref={canvasRef}
+          aria-hidden="true"
+          className={`pointer-events-none absolute right-0 top-0 h-[47svh] w-full transition-opacity duration-700 md:h-full md:w-[calc(max(7vw,96px)+min(36vw,680px)+2vw)] ${three === "ready" ? "opacity-100" : "opacity-0"}`}
+        />
       </div>
     </section>
   );

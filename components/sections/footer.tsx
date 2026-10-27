@@ -17,7 +17,7 @@ export default function Footer() {
         fontFamily={interTight.style.fontFamily}
         fontWeight={800}
         monoFamily={jetbrainsMono.style.fontFamily}
-        height="clamp(480px, 74svh, 680px)"
+        height="100svh"
       />
     </div>
   );
