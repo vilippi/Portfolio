@@ -1,25 +1,20 @@
 "use client";
 
 // Adaptado de "perspective-tunnel-hero" (21st.dev). Mudanças em relação ao original:
-// - o progresso vem do scroll da página (seção alta + palco sticky) em vez de
-//   capturar o `wheel` com preventDefault, que prendia o visitante no túnel
-//   para sempre e brigava com o smooth scroll (Lenis);
+// - não tem scroll próprio: roda dentro do pin da seção de Projetos, guiado
+//   por `progress` (a fase do túnel) e `reveal` (a passagem que vem antes).
+//   O original capturava o `wheel` com preventDefault, prendendo o visitante;
+// - é dividido em duas camadas (fundo e frente) para o risco roxo da seção
+//   de Projetos passar entre elas;
+// - título e cards só começam com o túnel ocupando a tela toda;
 // - os cards vêm por props (os projetos do portfólio) e são links;
 // - só tema escuro, com o índigo trocado pela cor de destaque do site;
 // - import de "motion/react" (o pacote framer-motion agora se chama motion);
-// - com prefers-reduced-motion, mostra uma grade estática no lugar do voo.
+// - com prefers-reduced-motion a página mostra `StaticGallery` no lugar (por CSS).
 
-import {
-  motion,
-  useTransform,
-  useReducedMotion,
-  useMotionValue,
-  useScroll,
-  useSpring,
-  type MotionValue,
-} from "motion/react";
+import { motion, useTransform, useMotionValue, useSpring, type MotionValue } from "motion/react";
 import Image from "next/image";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 export type TunnelItem = { src: string; title: string; href?: string };
 
@@ -56,21 +51,21 @@ interface StageDimensions {
   isMobile: boolean;
 }
 
-function useCameraParallax(enabled: boolean) {
+function useCameraParallax() {
   const rawX = useMotionValue(0);
   const rawY = useMotionValue(0);
   const x = useSpring(rawX, SPRING_CONFIG);
   const y = useSpring(rawY, SPRING_CONFIG);
 
   useEffect(() => {
-    if (!enabled) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     const onMove = (e: PointerEvent) => {
       rawX.set((e.clientX / window.innerWidth - 0.5) * 2);
       rawY.set((e.clientY / window.innerHeight - 0.5) * 2);
     };
     window.addEventListener("pointermove", onMove, { passive: true });
     return () => window.removeEventListener("pointermove", onMove);
-  }, [enabled, rawX, rawY]);
+  }, [rawX, rawY]);
 
   return { x, y };
 }
@@ -95,6 +90,8 @@ function TunnelCard({ card, progress, pointer, total, stage }: TunnelCardProps) 
   const z = useTransform(localProgress, [0, 1], [farZ, nearZ]);
 
   const opacity = useTransform(localProgress, [0, 0.18, 0.82, 0.98], [0, 1, 1, 0]);
+  // Card quase invisível não recebe clique (nem rouba o de quem está atrás).
+  const pointerEvents = useTransform(opacity, (o) => (o > 0.35 ? "auto" : "none"));
 
   const cardWidth = stage.isMobile
     ? Math.max(130, Math.min(180, stage.width * 0.38))
@@ -113,8 +110,8 @@ function TunnelCard({ card, progress, pointer, total, stage }: TunnelCardProps) 
   return (
     <motion.a
       href={card.item.href ?? "#"}
-      style={{ width: cardWidth, transform, opacity, zIndex: card.index + 1 }}
-      className="pointer-events-auto absolute left-1/2 top-1/2 aspect-4/5 cursor-pointer select-none will-change-transform"
+      style={{ width: cardWidth, transform, opacity, pointerEvents, zIndex: card.index + 1 }}
+      className="absolute left-1/2 top-1/2 aspect-4/5 cursor-pointer select-none will-change-transform"
     >
       <div className="group relative h-full w-full overflow-hidden rounded-2xl bg-neutral-900 shadow-2xl shadow-black/90 ring-1 ring-white/15 transition-all duration-500 hover:shadow-accent/30 hover:ring-accent">
         <Image
@@ -135,24 +132,25 @@ function TunnelCard({ card, progress, pointer, total, stage }: TunnelCardProps) 
   );
 }
 
-type TunnelProps = {
+type TunnelStageProps = {
   items: TunnelItem[];
   kicker: string;
   title: [string, string];
   hint: string;
   prompt: string;
-  id?: string;
-  rail?: string;
+  /** 0–1 da fase do túnel: título e cards. */
+  progress: MotionValue<number>;
+  /** 0–1 da passagem antes do túnel: só o fundo aparece. */
+  reveal: MotionValue<number>;
+  className?: string;
 };
 
-export default function PerspectiveTunnelHero({ items, kicker, title, hint, prompt, id, rail }: TunnelProps) {
-  const reduce = useReducedMotion();
-  if (reduce) return <StaticGallery items={items} kicker={kicker} title={title} id={id} rail={rail} />;
-  return <Tunnel items={items} kicker={kicker} title={title} hint={hint} prompt={prompt} id={id} rail={rail} />;
-}
-
-function Tunnel({ items, kicker, title, hint, prompt, id, rail }: TunnelProps) {
-  const sectionRef = useRef<HTMLElement>(null);
+/**
+ * As duas camadas do túnel, para posicionar dentro de um palco fixo
+ * (`relative`/`isolate`): o fundo em z-0 e a frente em z-20. O que ficar em
+ * z-10 no palco passa entre elas.
+ */
+export function TunnelStage({ items, kicker, title, hint, prompt, progress, reveal, className = "" }: TunnelStageProps) {
   const [cards] = useState(() => buildCards(items));
 
   const [stage, setStage] = useState<StageDimensions>({ width: 1440, height: 900, isMobile: false });
@@ -170,30 +168,46 @@ function Tunnel({ items, kicker, title, hint, prompt, id, rail }: TunnelProps) {
     return () => window.removeEventListener("resize", updateDimensions);
   }, []);
 
-  // Progresso = quanto da seção alta já passou pelo palco fixo.
-  const { scrollYProgress } = useScroll({ target: sectionRef, offset: ["start start", "end end"] });
-  const smoothProgress = useSpring(scrollYProgress, { stiffness: 80, damping: 30, restDelta: 0.0001 });
+  const smoothProgress = useSpring(progress, { stiffness: 80, damping: 30, restDelta: 0.0001 });
 
-  const pointer = useCameraParallax(true);
+  const pointer = useCameraParallax();
 
   const titleScale = useTransform(smoothProgress, [0, 0.5, 1], [0.7, 1, 1.35]);
-  const titleOpacity = useTransform(smoothProgress, [0, 0.12, 0.9, 1], [0.25, 1, 1, 0]);
-  const promptOpacity = useTransform(smoothProgress, [0, 0.12], [1, 0]);
+  const titleOpacity = useTransform(smoothProgress, [0, 0.1, 0.88, 1], [0, 1, 1, 0]);
+  const promptOpacity = useTransform(smoothProgress, [0.02, 0.08, 0.16, 0.22], [0, 1, 1, 0]);
+  // Escondidas por inteiro fora da fase delas: cards com opacidade 0 não
+  // podem ficar por cima da lista de projetos pegando cliques. A frente olha
+  // também o progresso cru: voltando rápido para a lista, a mola ainda estaria
+  // "desenrolando" o túnel por cima dela.
+  const backVisibility = useTransform(reveal, (v) => (v > 0.001 ? "visible" : "hidden"));
+  const frontVisibility = useTransform([progress, smoothProgress], ([raw, smooth]: number[]) =>
+    raw > 0.001 && smooth > 0.001 ? "visible" : "hidden",
+  );
 
   return (
-    <section ref={sectionRef} id={id} data-rail={rail} aria-labelledby="tunnel-title" className="relative h-[300svh] bg-bg">
-      <div
-        className="sticky top-0 flex h-svh w-full select-none items-center justify-center overflow-hidden bg-bg text-white"
-        style={{ perspective: stage.isMobile ? "900px" : "1200px", transformStyle: "preserve-3d" }}
+    <>
+      <motion.div
+        aria-hidden="true"
+        style={{ opacity: reveal, visibility: backVisibility }}
+        className={`pointer-events-none absolute inset-0 z-0 flex items-center justify-center overflow-hidden ${className}`}
       >
         {/* Grade de pontos e brilho */}
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(rgba(98,21,180,0.42)_1px,transparent_1px)] [background-size:28px_28px] opacity-60 [mask-image:radial-gradient(ellipse_70%_70%_at_50%_50%,#000_60%,transparent_100%)]" />
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(98,21,180,0.22)_0%,transparent_72%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(rgba(98,21,180,0.42)_1px,transparent_1px)] [background-size:28px_28px] opacity-60 [mask-image:radial-gradient(ellipse_70%_70%_at_50%_50%,#000_60%,transparent_100%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(98,21,180,0.22)_0%,transparent_72%)]" />
 
         {/* Anéis de profundidade */}
-        <div className="pointer-events-none absolute h-[48vmin] w-[48vmin] rounded-full border border-accent/25" />
-        <div className="pointer-events-none absolute h-[76vmin] w-[76vmin] rounded-full border border-dashed border-white/10" />
+        <div className="absolute h-[48vmin] w-[48vmin] rounded-full border border-accent/25" />
+        <div className="absolute h-[76vmin] w-[76vmin] rounded-full border border-dashed border-white/10" />
+      </motion.div>
 
+      <motion.div
+        style={{
+          visibility: frontVisibility,
+          perspective: stage.isMobile ? "900px" : "1200px",
+          transformStyle: "preserve-3d",
+        }}
+        className={`pointer-events-none absolute inset-0 z-20 flex select-none items-center justify-center overflow-hidden text-white ${className}`}
+      >
         {/* Título central */}
         <motion.div
           style={{ scale: titleScale, opacity: titleOpacity }}
@@ -233,16 +247,24 @@ function Tunnel({ items, kicker, title, hint, prompt, id, rail }: TunnelProps) {
             />
           ))}
         </div>
-      </div>
-    </section>
+      </motion.div>
+    </>
   );
 }
 
-function StaticGallery({ items, kicker, title, id, rail }: Omit<TunnelProps, "hint" | "prompt">) {
+type StaticGalleryProps = {
+  items: TunnelItem[];
+  kicker: string;
+  title: [string, string];
+  className?: string;
+};
+
+/** Versão sem movimento (prefers-reduced-motion): grade simples com os projetos. */
+export function StaticGallery({ items, kicker, title, className = "" }: StaticGalleryProps) {
   return (
-    <section id={id} data-rail={rail} aria-labelledby="tunnel-title" className="bg-bg px-gutter py-[clamp(80px,10vw,160px)]">
+    <section aria-labelledby="gallery-title" className={`bg-bg px-gutter py-[clamp(80px,10vw,160px)] ${className}`}>
       <p className="mb-4 font-mono text-xs uppercase tracking-[0.4em] text-[#a77ce8]">{kicker}</p>
-      <h2 id="tunnel-title" className="text-5xl font-bold uppercase leading-[0.9] tracking-tighter text-ink sm:text-7xl">
+      <h2 id="gallery-title" className="text-5xl font-bold uppercase leading-[0.9] tracking-tighter text-ink sm:text-7xl">
         {title[0]} {title[1]}
       </h2>
       <ul className="mt-12 grid grid-cols-2 gap-4 md:grid-cols-3">

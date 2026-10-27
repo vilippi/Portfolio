@@ -217,6 +217,7 @@ export async function createNotebookScene(o: Options): Promise<NotebookScene> {
   const pointer = { x: 0, y: 0, tx: 0, ty: 0 };
   let visible = true;
   let last = performance.now();
+  let gone = false; // já saiu por cima: um último frame e o loop descansa (túnel rodando)
 
   const tick = () => {
     if (!visible) return;
@@ -225,6 +226,10 @@ export async function createNotebookScene(o: Options): Promise<NotebookScene> {
     last = now;
 
     if (!o.reduced) {
+      if (outro >= 1) {
+        if (gone) return;
+        gone = true;
+      } else gone = false;
       const t = now / 1000;
       const ease = 1 - Math.exp(-dt * 4);
       pointer.x += (pointer.tx - pointer.x) * ease;

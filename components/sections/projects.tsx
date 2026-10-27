@@ -5,8 +5,10 @@ import Image, { getImageProps } from "next/image";
 import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useGSAP } from "@gsap/react";
-import { person, projects } from "@/lib/content";
+import { useMotionValue } from "motion/react";
+import { person, projects, tunnel } from "@/lib/content";
 import { interTight } from "@/lib/fonts";
+import { TunnelStage } from "@/components/ui/perspective-tunnel-hero";
 import type { NotebookScene } from "@/components/three/notebook-scene";
 
 gsap.registerPlugin(ScrollTrigger, useGSAP);
@@ -24,11 +26,20 @@ function scaleRibbon(sx: number, sy: number) {
   return RIBBON.replace(/-?\d+(\.\d+)?/g, (v) => (Number(v) * (i++ % 2 === 0 ? sx : sy)).toFixed(1));
 }
 
-// Pin em alturas de tela: a lista anda, depois o notebook fecha e sobe
-// enquanto o risco termina de sair pela direita.
+// Pin em alturas de tela, em quatro fases: a lista anda; o notebook fecha e
+// sobe enquanto o risco termina; a lista sai por cima e o risco para no
+// topo enquanto o fundo do túnel aparece; o túnel roda. Depois o pin solta.
 const LIST_VH = 0.55 * (projects.length - 1);
 const OUTRO_VH = 1.1;
-const LIST_SHARE = LIST_VH / (LIST_VH + OUTRO_VH);
+const HANDOFF_VH = 0.7;
+const TUNNEL_VH = 2;
+const PIN_VH = LIST_VH + OUTRO_VH + HANDOFF_VH + TUNNEL_VH;
+const LIST_END = LIST_VH / PIN_VH;
+const OUTRO_END = (LIST_VH + OUTRO_VH) / PIN_VH;
+const HANDOFF_END = (LIST_VH + OUTRO_VH + HANDOFF_VH) / PIN_VH;
+
+const tunnelItems = projects.map((p) => ({ src: p.image, title: p.title, href: p.href }));
+const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 
 export default function Projects() {
   const root = useRef<HTMLElement>(null);
@@ -38,6 +49,8 @@ export default function Projects() {
   const outroRef = useRef(0);
   const notebook = useRef<NotebookScene | null>(null);
   const [three, setThree] = useState<"loading" | "ready" | "failed">("loading");
+  const tunnelProgress = useMotionValue(0);
+  const tunnelReveal = useMotionValue(0);
 
   // O three.js baixa depois da hidratação, num chunk separado; a cena só é
   // criada quando a seção está chegando, para não disputar com o hero. Sem
@@ -115,8 +128,10 @@ export default function Projects() {
         const items = gsap.utils.toArray<HTMLElement>("[data-proj-item]", section);
         const path = section.querySelector<SVGPathElement>("[data-proj-ribbon]")!;
         const labels = section.querySelector<HTMLElement>("[data-proj-labels]")!;
+        const galeria = section.querySelector<HTMLElement>("#galeria")!;
         const svg = path.ownerSVGElement!;
         const n = items.length;
+        const handoffEase = gsap.parseEase("power2.inOut");
 
         let itemH = 0;
         let anchorY = 0;
@@ -124,6 +139,7 @@ export default function Projects() {
         let fadeAbove = -Infinity; // celular: nomes somem antes de chegar no preview
         let svgTop = 0;
         let total = 0;
+        let ribbonShift = 0; // quanto a trilha sobe na passagem para o túnel
         // Tabela comprimento → y do risco (px), para a ponta acompanhar o item ativo.
         let table: { len: number; y: number }[] = [];
 
@@ -152,6 +168,19 @@ export default function Projects() {
             maxY = Math.max(maxY, y);
             table.push({ len, y: maxY });
           }
+
+          // Na passagem a trilha sobe até a ponta final do risco ficar no
+          // topo da tela (com folga de 3/4 da espessura do traço).
+          const tip = path.getPointAtLength(total);
+          const lastTy = anchorY - (n - 0.5) * itemH;
+          const strokeW = parseFloat(getComputedStyle(path).strokeWidth) || 80;
+          ribbonShift = Math.max(0, lastTy + svgTop + tip.y - strokeW * 0.75);
+
+          // Marcador da fase do túnel, para o trilho lateral acender "Galeria".
+          // O trilho olha o meio da tela, daí o meio vh a mais no topo.
+          const vh = window.innerHeight;
+          galeria.style.top = `${vh * (LIST_VH + OUTRO_VH + HANDOFF_VH + 0.5)}px`;
+          galeria.style.height = `${vh * (TUNNEL_VH + 0.5)}px`;
         };
 
         const lengthAtY = (yUser: number) => {
@@ -160,9 +189,12 @@ export default function Projects() {
         };
 
         const render = (p: number) => {
-          const listT = Math.min(1, p / LIST_SHARE);
+          const listT = clamp01(p / LIST_END);
+          const outroT = clamp01((p - LIST_END) / (OUTRO_END - LIST_END));
+          const handoffT = handoffEase(clamp01((p - OUTRO_END) / (HANDOFF_END - OUTRO_END)));
+          const tunnelT = clamp01((p - HANDOFF_END) / (1 - HANDOFF_END));
           const pos = listT * (n - 1);
-          const ty = anchorY - (pos + 0.5) * itemH;
+          const ty = anchorY - (pos + 0.5) * itemH - handoffT * ribbonShift;
           gsap.set(track, { y: ty });
 
           items.forEach((el, i) => {
@@ -171,13 +203,15 @@ export default function Projects() {
             el.style.transform = `translate3d(${(ad * stepX).toFixed(2)}px,0,0)`;
             const top = ty + i * itemH;
             const clear = Math.min(1, Math.max(0, (top - fadeAbove) / (itemH * 0.5)));
-            el.style.opacity = String((1 - Math.min(1, Math.abs(d)) * 0.7) * clear);
+            const op = (1 - Math.min(1, Math.abs(d)) * 0.7) * clear;
+            el.style.opacity = String(op);
+            // Nome já sumido (celular, atrás do preview) não recebe clique invisível.
+            el.style.visibility = op < 0.02 ? "hidden" : "";
           });
 
           // Ponta do risco um pouco abaixo do item ativo.
           const tipTrackY = (pos + 0.5) * itemH + itemH * 0.75;
           let len = lengthAtY(tipTrackY - svgTop);
-          const outroT = p > LIST_SHARE ? (p - LIST_SHARE) / (1 - LIST_SHARE) : 0;
           len += (total - len) * outroT;
           path.style.strokeDashoffset = String(total - len);
 
@@ -185,6 +219,11 @@ export default function Projects() {
           outroRef.current = outroT;
           notebook.current?.setOutro(outroT);
           labels.style.opacity = String(1 - Math.min(1, outroT / 0.3));
+
+          // Passagem e túnel: primeiro só o fundo, depois título e cards. O
+          // fundo apaga no fim, para o brilho não sair cortado quando o pin solta.
+          tunnelReveal.set(handoffT * (1 - clamp01((tunnelT - 0.82) / 0.18)));
+          tunnelProgress.set(tunnelT);
 
           const idx = Math.round(pos);
           if (idx !== activeRef.current) {
@@ -199,7 +238,7 @@ export default function Projects() {
         ScrollTrigger.create({
           trigger: section,
           start: "top top",
-          end: () => `+=${window.innerHeight * (LIST_VH + OUTRO_VH)}`,
+          end: () => `+=${window.innerHeight * PIN_VH}`,
           pin: stage,
           anticipatePin: 1,
           invalidateOnRefresh: true,
@@ -220,9 +259,14 @@ export default function Projects() {
         return () => {
           stage.removeEventListener("pointermove", onMove);
           labels.style.opacity = "";
+          galeria.style.top = "";
+          galeria.style.height = "";
+          tunnelReveal.set(0);
+          tunnelProgress.set(0);
           items.forEach((el) => {
             el.style.transform = "";
             el.style.opacity = "";
+            el.style.visibility = "";
           });
           path.style.strokeDashoffset = "";
           path.style.strokeDasharray = "";
@@ -246,15 +290,27 @@ export default function Projects() {
 
   return (
     <section id="projetos" ref={root} data-rail="Projetos" aria-labelledby="projects-title" className="relative bg-bg">
-      <div data-proj-stage className="relative h-svh overflow-clip motion-reduce:h-auto motion-reduce:py-[16svh]">
+      <div data-proj-stage className="relative isolate h-svh overflow-clip motion-reduce:h-auto motion-reduce:py-[16svh]">
         <h2 id="projects-title" className="sr-only">
           Projetos
         </h2>
 
+        {/* Túnel no fim do pin: fundo em z-0, frente em z-20; a trilha com o risco passa entre eles */}
+        <TunnelStage
+          items={tunnelItems}
+          kicker={tunnel.kicker}
+          title={[tunnel.title[0], tunnel.title[1]]}
+          hint={tunnel.hint}
+          prompt={tunnel.prompt}
+          progress={tunnelProgress}
+          reveal={tunnelReveal}
+          className="motion-reduce:hidden"
+        />
+
         {/* Onde o item ativo fica: centro da tela no desktop, mais abaixo no celular */}
         <span data-proj-anchor aria-hidden="true" className="absolute left-0 top-1/2 max-md:top-[66%]" />
 
-        <div className="absolute inset-0 motion-reduce:relative">
+        <div className="pointer-events-none absolute inset-0 z-10 motion-reduce:relative">
           <div data-proj-track className="absolute inset-x-0 top-0 will-change-transform motion-reduce:relative">
             <svg
               aria-hidden="true"
@@ -282,7 +338,7 @@ export default function Projects() {
                     aria-current={i === active ? "true" : undefined}
                     onPointerEnter={() => pickWithoutMotion(i)}
                     onFocus={() => pickWithoutMotion(i)}
-                    className="flex h-[17svh] max-h-40 min-h-21 max-w-[min(36vw,620px)] items-center border-b border-line text-[clamp(34px,3.35vw,64px)] font-medium leading-none tracking-[-0.03em] text-ink max-md:h-[12svh] max-md:max-w-[84vw]"
+                    className="pointer-events-auto flex h-[17svh] max-h-40 min-h-21 max-w-[min(36vw,620px)] items-center border-b border-line text-[clamp(34px,3.35vw,64px)] font-medium leading-none tracking-[-0.03em] text-ink max-md:h-[12svh] max-md:max-w-[84vw]"
                   >
                     {p.title}
                   </a>
@@ -293,7 +349,7 @@ export default function Projects() {
         </div>
 
         {/* Preview do projeto ativo: a caixa diz onde o notebook 3D fica */}
-        <div data-proj-preview className="pointer-events-none absolute right-[max(7vw,96px)] top-1/2 w-[min(36vw,680px)] -translate-y-1/2 max-md:left-1/2 max-md:right-auto max-md:top-[10svh] max-md:w-[min(86vw,440px)] max-md:-translate-x-1/2 max-md:translate-y-0 motion-reduce:top-[16svh] motion-reduce:translate-y-0 max-md:motion-reduce:hidden">
+        <div data-proj-preview className="pointer-events-none absolute right-[max(7vw,96px)] top-1/2 z-30 w-[min(36vw,680px)] -translate-y-1/2 max-md:left-1/2 max-md:right-auto max-md:top-[10svh] max-md:w-[min(86vw,440px)] max-md:-translate-x-1/2 max-md:translate-y-0 motion-reduce:top-[16svh] motion-reduce:translate-y-0 max-md:motion-reduce:hidden">
           <div data-proj-labels className="mb-2 flex justify-between text-[11px] font-bold uppercase tracking-[0.06em] text-muted">
             <span aria-live="polite">{current.date}</span>
             <span>Preview</span>
@@ -325,9 +381,12 @@ export default function Projects() {
         <canvas
           ref={canvasRef}
           aria-hidden="true"
-          className={`pointer-events-none absolute right-0 top-0 h-[47svh] w-full transition-opacity duration-700 md:h-full md:w-[calc(max(7vw,96px)+min(36vw,680px)+2vw)] ${three === "ready" ? "opacity-100" : "opacity-0"}`}
+          className={`pointer-events-none absolute right-0 top-0 z-30 h-[47svh] w-full transition-opacity duration-700 md:h-full md:w-[calc(max(7vw,96px)+min(36vw,680px)+2vw)] ${three === "ready" ? "opacity-100" : "opacity-0"}`}
         />
       </div>
+
+      {/* Cobre o trecho do pin em que o túnel roda (posição vem do measure), para o trilho lateral */}
+      <div id="galeria" aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0" />
     </section>
   );
 }
