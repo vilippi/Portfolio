@@ -1,26 +1,122 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg: #0a0a0a;
+  --bg-raised: #131313;
+  --ink: #f2f0eb;
+  --muted: #8a8780;
+  --faint: #3a3936;
+  --line: rgba(242, 240, 235, 0.12);
+  --accent: #6215b4;
+  --accent-ink: #ffffff;
+  --gutter: clamp(16px, 2.4vw, 40px);
+  color-scheme: dark;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-bg: var(--bg);
+  --color-bg-raised: var(--bg-raised);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --font-sans: var(--font-inter-tight);
+  --font-serif: var(--font-instrument-serif);
+  --font-mono: var(--font-jetbrains-mono);
+  --spacing-gutter: var(--gutter);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  background: var(--bg);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-inter-tight), "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
+}
+
+/* Lenis */
+html.lenis,
+html.lenis body {
+  height: auto;
+}
+.lenis.lenis-smooth {
+  scroll-behavior: auto !important;
+}
+.lenis.lenis-smooth [data-lenis-prevent] {
+  overscroll-behavior: contain;
+}
+.lenis.lenis-stopped {
+  overflow: clip;
+}
+
+/* Estado inicial da intro. A classe js-motion é posta por um script no <head>
+   antes da primeira pintura; se o GSAP nunca rodar, o fallback mostra tudo. */
+.js-motion [data-intro] {
+  visibility: hidden;
+  animation: intro-fallback 0s 4s forwards;
+}
+.js-motion [data-draw] {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: draw-fallback 0s 6s forwards;
+}
+@keyframes intro-fallback {
+  to {
+    visibility: visible;
+  }
+}
+@keyframes draw-fallback {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* Footer (componente copiado do 21st): em telas médias as 4 colunas não
+   cabem, então passa para 2 colunas antes do breakpoint original de 720px. */
+@media (max-width: 1024px) {
+  .hwf-root .hwf-top {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    row-gap: 18px;
+  }
+  .hwf-root .hwf-brand {
+    grid-column: 1 / -1;
+  }
+}
+
+@keyframes rail-in {
+  from {
+    opacity: 0;
+    transform: translateX(6px);
+  }
+}
+
+/* Linhas da frase do Sobre Mim, cortadas pelo SplitText */
+.split-line-mask {
+  overflow: clip;
+  padding-bottom: 0.08em;
+  margin-bottom: -0.08em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+  }
 }

@@ -7,6 +7,10 @@ const nextConfig: NextConfig = {
   },
   cacheComponents: true,
   partialPrefetching: true,
+  images: {
+    // Imagens provisórias dos projetos (lib/content.ts).
+    remotePatterns: [{ protocol: "https", hostname: "cdn.21st.dev", pathname: "/assets/**" }],
+  },
   turbopack: {
     rules: {
       "*.css": {

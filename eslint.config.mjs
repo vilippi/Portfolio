@@ -12,6 +12,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Skills instaladas e saída do inspector: não são código do site.
+    ".claude/**",
+    ".taste-skill/**",
   ]),
 ]);
 

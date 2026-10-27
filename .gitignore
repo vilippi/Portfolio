@@ -147,3 +147,12 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
+
+# Next.js / Vercel
+next-env.d.ts
+.vercel
+*.pem
+.DS_Store
+
+# design-taste-frontend skill output
+.taste-skill/
