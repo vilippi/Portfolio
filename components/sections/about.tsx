@@ -1,11 +1,12 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import Image from "next/image";
 import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { SplitText } from "gsap/SplitText";
 import { useGSAP } from "@gsap/react";
+import LippiChat from "@/components/chat/lippi-chat";
 import { about, person } from "@/lib/content";
 
 gsap.registerPlugin(ScrollTrigger, SplitText, useGSAP);
@@ -14,6 +15,9 @@ const PHOTO = "/images/retrato-roxo.png";
 
 export default function About() {
   const root = useRef<HTMLElement>(null);
+  const info = useRef<HTMLButtonElement>(null);
+  // Onde o Info estava no clique: é de lá que o Lippi Chat sai.
+  const [chatOrigin, setChatOrigin] = useState<DOMRect | null>(null);
 
   useGSAP(
     () => {
@@ -138,10 +142,14 @@ export default function About() {
         <p data-about-rise className="text-[clamp(18px,1.35vw,23px)] leading-[1.45] tracking-[-0.01em] text-ink">
           {about.paragraph}
         </p>
-        <a
+        <button
+          ref={info}
+          type="button"
           data-about-rise
-          href="#skills"
-          className="group mt-10 inline-flex items-center gap-2 text-[15px] font-semibold uppercase text-ink/85 transition-colors hover:text-ink"
+          aria-haspopup="dialog"
+          aria-expanded={chatOrigin !== null}
+          onClick={(e) => setChatOrigin(e.currentTarget.getBoundingClientRect())}
+          className="group mt-10 inline-flex cursor-pointer items-center gap-2 text-[15px] font-semibold uppercase text-ink/85 transition-colors hover:text-ink"
         >
           <span className="bg-[linear-gradient(currentColor,currentColor)] bg-[length:0%_1px] bg-left-bottom bg-no-repeat pb-0.5 transition-[background-size] duration-500 group-hover:bg-[length:100%_1px]">
             {about.linkLabel}
@@ -149,8 +157,17 @@ export default function About() {
           <span aria-hidden="true" className="transition-transform duration-300 group-hover:translate-x-1">
             →
           </span>
-        </a>
+        </button>
       </div>
+
+      <LippiChat
+        origin={chatOrigin}
+        originRef={info}
+        onClosed={() => {
+          setChatOrigin(null);
+          info.current?.focus({ preventScroll: true });
+        }}
+      />
     </section>
   );
 }

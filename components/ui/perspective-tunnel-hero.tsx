@@ -113,7 +113,7 @@ function TunnelCard({ card, progress, pointer, total, stage }: TunnelCardProps) 
       style={{ width: cardWidth, transform, opacity, pointerEvents, zIndex: card.index + 1 }}
       className="absolute left-1/2 top-1/2 aspect-4/5 cursor-pointer select-none will-change-transform"
     >
-      <div className="group relative h-full w-full overflow-hidden rounded-2xl bg-neutral-900 shadow-2xl shadow-black/90 ring-1 ring-white/15 transition-all duration-500 hover:shadow-accent/30 hover:ring-accent">
+      <div className="group relative h-full w-full overflow-hidden rounded-2xl bg-neutral-900 shadow-2xl shadow-black/90 ring-1 ring-ink/15 transition-all duration-500 hover:shadow-accent/30 hover:ring-accent">
         <Image
           src={card.item.src}
           alt={card.item.title}
@@ -197,7 +197,7 @@ export function TunnelStage({ items, kicker, title, hint, prompt, progress, reve
 
         {/* Anéis de profundidade */}
         <div className="absolute h-[48vmin] w-[48vmin] rounded-full border border-accent/25" />
-        <div className="absolute h-[76vmin] w-[76vmin] rounded-full border border-dashed border-white/10" />
+        <div className="absolute h-[76vmin] w-[76vmin] rounded-full border border-dashed border-ink/10" />
       </motion.div>
 
       <motion.div
@@ -206,29 +206,29 @@ export function TunnelStage({ items, kicker, title, hint, prompt, progress, reve
           perspective: stage.isMobile ? "900px" : "1200px",
           transformStyle: "preserve-3d",
         }}
-        className={`pointer-events-none absolute inset-0 z-20 flex select-none items-center justify-center overflow-hidden text-white ${className}`}
+        className={`pointer-events-none absolute inset-0 z-20 flex select-none items-center justify-center overflow-hidden text-ink ${className}`}
       >
         {/* Título central */}
         <motion.div
           style={{ scale: titleScale, opacity: titleOpacity }}
           className="pointer-events-none z-0 flex max-w-xl flex-col items-center px-6 text-center"
         >
-          <p className="mb-4 font-mono text-xs uppercase tracking-[0.4em] text-[#a77ce8]">{kicker}</p>
+          <p className="mb-4 font-mono text-xs uppercase tracking-[0.4em] text-accent-soft">{kicker}</p>
           <h2
             id="tunnel-title"
-            className="bg-gradient-to-b from-white via-white to-white/40 bg-clip-text text-5xl font-bold uppercase leading-[0.9] tracking-tighter text-transparent sm:text-7xl md:text-8xl"
+            className="bg-gradient-to-b from-ink via-ink to-ink/40 bg-clip-text text-5xl font-bold uppercase leading-[0.9] tracking-tighter text-transparent sm:text-7xl md:text-8xl"
           >
             {title[0]}
             <br />
             {title[1]}
           </h2>
-          <p className="mt-4 max-w-[36ch] text-sm font-light text-neutral-400 sm:text-base">{hint}</p>
+          <p className="mt-4 max-w-[36ch] text-sm font-light text-muted sm:text-base">{hint}</p>
         </motion.div>
 
         {/* Indicação de scroll */}
         <motion.div
           style={{ opacity: promptOpacity }}
-          className="pointer-events-none absolute bottom-8 z-20 flex flex-col items-center gap-2 font-mono text-xs uppercase tracking-[0.3em] text-neutral-400"
+          className="pointer-events-none absolute bottom-8 z-20 flex flex-col items-center gap-2 font-mono text-xs uppercase tracking-[0.3em] text-muted"
         >
           <span>{prompt}</span>
           <div className="h-6 w-px bg-gradient-to-b from-accent to-transparent" />
@@ -263,7 +263,7 @@ type StaticGalleryProps = {
 export function StaticGallery({ items, kicker, title, className = "" }: StaticGalleryProps) {
   return (
     <section aria-labelledby="gallery-title" className={`bg-bg px-gutter py-[clamp(80px,10vw,160px)] ${className}`}>
-      <p className="mb-4 font-mono text-xs uppercase tracking-[0.4em] text-[#a77ce8]">{kicker}</p>
+      <p className="mb-4 font-mono text-xs uppercase tracking-[0.4em] text-accent-soft">{kicker}</p>
       <h2 id="gallery-title" className="text-5xl font-bold uppercase leading-[0.9] tracking-tighter text-ink sm:text-7xl">
         {title[0]} {title[1]}
       </h2>

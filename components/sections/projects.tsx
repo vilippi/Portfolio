@@ -10,6 +10,7 @@ import { person, projects, tunnel } from "@/lib/content";
 import { interTight } from "@/lib/fonts";
 import { TunnelStage } from "@/components/ui/perspective-tunnel-hero";
 import type { NotebookScene } from "@/components/three/notebook-scene";
+import { RIBBON_STROKE, scalePath } from "@/lib/ribbon";
 
 gsap.registerPlugin(ScrollTrigger, useGSAP);
 
@@ -21,22 +22,21 @@ gsap.registerPlugin(ScrollTrigger, useGSAP);
 const RIBBON =
   "M -60 18 C 160 14, 400 40, 430 110 C 455 190, 120 230, 90 320 C 60 410, 450 440, 430 530 C 410 610, 70 640, 70 730 C 70 820, 300 880, 430 905 C 560 930, 700 935, 820 915";
 
-function scaleRibbon(sx: number, sy: number) {
-  let i = 0;
-  return RIBBON.replace(/-?\d+(\.\d+)?/g, (v) => (Number(v) * (i++ % 2 === 0 ? sx : sy)).toFixed(1));
-}
-
-// Pin em alturas de tela, em quatro fases: a lista anda; o notebook fecha e
-// sobe enquanto o risco termina; a lista sai por cima e o risco para no
-// topo enquanto o fundo do túnel aparece; o túnel roda. Depois o pin solta.
+// Pin em alturas de tela, em cinco fases: com Projetos já na tela, o risco
+// entra e se desenha até o primeiro projeto (antes disso ele não aparece);
+// a lista anda; o notebook fecha e sobe enquanto o risco termina; a lista
+// sai por cima e o risco para no topo enquanto o fundo do túnel aparece; o
+// túnel roda. Depois o pin solta.
+const INTRO_VH = 0.5;
 const LIST_VH = 0.55 * (projects.length - 1);
 const OUTRO_VH = 1.1;
 const HANDOFF_VH = 0.7;
 const TUNNEL_VH = 2;
-const PIN_VH = LIST_VH + OUTRO_VH + HANDOFF_VH + TUNNEL_VH;
-const LIST_END = LIST_VH / PIN_VH;
-const OUTRO_END = (LIST_VH + OUTRO_VH) / PIN_VH;
-const HANDOFF_END = (LIST_VH + OUTRO_VH + HANDOFF_VH) / PIN_VH;
+const PIN_VH = INTRO_VH + LIST_VH + OUTRO_VH + HANDOFF_VH + TUNNEL_VH;
+const INTRO_END = INTRO_VH / PIN_VH;
+const LIST_END = (INTRO_VH + LIST_VH) / PIN_VH;
+const OUTRO_END = (INTRO_VH + LIST_VH + OUTRO_VH) / PIN_VH;
+const HANDOFF_END = (INTRO_VH + LIST_VH + OUTRO_VH + HANDOFF_VH) / PIN_VH;
 
 const tunnelItems = projects.map((p) => ({ src: p.image, title: p.title, href: p.href }));
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
@@ -140,6 +140,7 @@ export default function Projects() {
         let svgTop = 0;
         let total = 0;
         let ribbonShift = 0; // quanto a trilha sobe na passagem para o túnel
+        let introFrom = 0; // comprimento em que o risco cruza a borda de cima da tela
         // Tabela comprimento → y do risco (px), para a ponta acompanhar o item ativo.
         let table: { len: number; y: number }[] = [];
 
@@ -157,7 +158,7 @@ export default function Projects() {
           const h = svg.clientHeight;
           svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
           path.removeAttribute("pathLength");
-          path.setAttribute("d", scaleRibbon(w / 1000, h / 1000));
+          path.setAttribute("d", scalePath(RIBBON, w / 1000, h / 1000));
           total = path.getTotalLength();
           path.style.strokeDasharray = `${total} ${total * 2}`;
           table = [];
@@ -176,10 +177,16 @@ export default function Projects() {
           const strokeW = parseFloat(getComputedStyle(path).strokeWidth) || 80;
           ribbonShift = Math.max(0, lastTy + svgTop + tip.y - strokeW * 0.75);
 
+          // O traço nasce fora da tela, no alto. A entrada parte de onde ele
+          // (com a ponta redonda) ainda fica todo acima da borda, para aparecer
+          // já no primeiro movimento e continuar escondido antes do pin.
+          const firstTy = anchorY - 0.5 * itemH;
+          introFrom = lengthAtY(-(firstTy + svgTop) - strokeW / 2 - 2);
+
           // Marcador da fase do túnel, para o trilho lateral acender "Galeria".
           // O trilho olha o meio da tela, daí o meio vh a mais no topo.
           const vh = window.innerHeight;
-          galeria.style.top = `${vh * (LIST_VH + OUTRO_VH + HANDOFF_VH + 0.5)}px`;
+          galeria.style.top = `${vh * (INTRO_VH + LIST_VH + OUTRO_VH + HANDOFF_VH + 0.5)}px`;
           galeria.style.height = `${vh * (TUNNEL_VH + 0.5)}px`;
         };
 
@@ -189,7 +196,8 @@ export default function Projects() {
         };
 
         const render = (p: number) => {
-          const listT = clamp01(p / LIST_END);
+          const introT = clamp01(p / INTRO_END);
+          const listT = clamp01((p - INTRO_END) / (LIST_END - INTRO_END));
           const outroT = clamp01((p - LIST_END) / (OUTRO_END - LIST_END));
           const handoffT = handoffEase(clamp01((p - OUTRO_END) / (HANDOFF_END - OUTRO_END)));
           const tunnelT = clamp01((p - HANDOFF_END) / (1 - HANDOFF_END));
@@ -209,9 +217,10 @@ export default function Projects() {
             el.style.visibility = op < 0.02 ? "hidden" : "";
           });
 
-          // Ponta do risco um pouco abaixo do item ativo.
+          // Ponta do risco um pouco abaixo do item ativo. Na entrada ela vem do
+          // começo do traço (fora da tela, no alto) até lá; antes do pin, nada.
           const tipTrackY = (pos + 0.5) * itemH + itemH * 0.75;
-          let len = lengthAtY(tipTrackY - svgTop);
+          let len = introFrom + (lengthAtY(tipTrackY - svgTop) - introFrom) * introT;
           len += (total - len) * outroT;
           path.style.strokeDashoffset = String(total - len);
 
@@ -326,7 +335,7 @@ export default function Projects() {
                 stroke="var(--accent)"
                 strokeLinecap="round"
                 vectorEffect="non-scaling-stroke"
-                className="[stroke-dasharray:1_2] [stroke-dashoffset:1] stroke-[clamp(44px,6.4vw,118px)] motion-reduce:[stroke-dashoffset:0]"
+                className={`[stroke-dasharray:1_2] [stroke-dashoffset:1] ${RIBBON_STROKE} motion-reduce:[stroke-dashoffset:0]`}
               />
             </svg>
   

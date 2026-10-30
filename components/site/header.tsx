@@ -5,6 +5,8 @@ import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useGSAP } from "@gsap/react";
 import MenuOverlay from "@/components/site/menu-overlay";
+import ThemeSwitch from "@/components/site/theme-switch";
+import { afterIntro } from "@/components/site/intro";
 import { person } from "@/lib/content";
 
 gsap.registerPlugin(ScrollTrigger, useGSAP);
@@ -17,14 +19,18 @@ export default function Header() {
     () => {
       const mm = gsap.matchMedia();
       mm.add("(prefers-reduced-motion: no-preference)", () => {
-        gsap.from("[data-header-item]", {
+        // O nome chega voando do loading, que o mostra no pouso. O resto entra
+        // quando o loading começa a sair.
+        const intro = gsap.from("[data-header-item]:not([data-header-name])", {
           y: -24,
           autoAlpha: 0,
           duration: 0.9,
           ease: "power3.out",
           stagger: 0.08,
           delay: 0.2,
+          paused: true,
         });
+        return afterIntro(() => intro.play());
       });
 
       // Some ao rolar para baixo, volta ao rolar para cima.
@@ -53,6 +59,7 @@ export default function Header() {
         <a
           href="#top"
           data-header-item
+          data-header-name
           data-intro
           className="pointer-events-auto block leading-[0.82] text-ink"
           aria-label={`${person.firstName} ${person.lastName}, voltar ao início`}
@@ -77,6 +84,7 @@ export default function Header() {
         </a>
 
         <div className="pointer-events-auto flex items-center gap-3">
+          <ThemeSwitch />
           <a
             href="#contato"
             data-header-item

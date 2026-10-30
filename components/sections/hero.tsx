@@ -7,6 +7,7 @@ import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useGSAP } from "@gsap/react";
 import TopoLines from "@/components/site/topo-lines";
 import LiquidTrail from "@/components/site/liquid-trail";
+import { afterIntro } from "@/components/site/intro";
 import { person } from "@/lib/content";
 
 gsap.registerPlugin(ScrollTrigger, useGSAP);
@@ -22,7 +23,9 @@ export default function Hero() {
       const mm = gsap.matchMedia();
 
       mm.add("(prefers-reduced-motion: no-preference)", () => {
-        const tl = gsap.timeline({ defaults: { ease: "power3.out" } });
+        // A entrada espera o loading começar a sair.
+        const tl = gsap.timeline({ paused: true, defaults: { ease: "power3.out" } });
+        const stopWaiting = afterIntro(() => tl.play());
         // As linhas partem de stroke-dashoffset: 1 (CSS, ver [data-draw]).
         tl.to("[data-topo-line]", { strokeDashoffset: 0, duration: 2.2, ease: "power2.inOut", stagger: 0.035 }, 0)
           .from("[data-hero-portrait]", { yPercent: 9, scale: 1.06, autoAlpha: 0, duration: 1.6 }, 0.15)
@@ -52,7 +55,10 @@ export default function Hero() {
           .to("[data-hero-shade]", { opacity: 0.75, ease: "none" }, 0)
           .to("[data-hero-topo]", { yPercent: -10, ease: "none" }, 0);
 
-        return () => window.removeEventListener("pointermove", onMove);
+        return () => {
+          stopWaiting();
+          window.removeEventListener("pointermove", onMove);
+        };
       });
     },
     { scope: root },
@@ -130,14 +136,17 @@ export default function Hero() {
         </div>
       </aside>
 
-      <div className="absolute bottom-[clamp(20px,2.4vw,36px)] right-gutter z-5 text-right max-sm:left-gutter max-sm:text-left">
-        <h1 id="hero-title" data-hero-rise data-intro className="text-[clamp(30px,3.4vw,58px)] font-semibold leading-[0.95] tracking-[-0.035em] text-ink">
+      {/* O título é claro nos dois temas: no celular ele fica todo sobre o
+          retrato. No tema claro, de sm para cima, passa da camiseta preta para
+          o fundo claro, e o mix-blend-difference o deixa legível sobre os dois. */}
+      <div className="absolute bottom-[clamp(20px,2.4vw,36px)] right-gutter z-5 text-right max-sm:left-gutter max-sm:text-left light:sm:mix-blend-difference">
+        <h1 id="hero-title" data-hero-rise data-intro className="text-[clamp(30px,3.4vw,58px)] font-semibold leading-[0.95] tracking-[-0.035em] text-[#f2f0eb]">
           <span className="sr-only">
             {person.firstName} {person.lastName},{" "}
           </span>
           Desenvolvedor
           <br />
-          Front-end
+          FullStack
         </h1>
       </div>
     </section>

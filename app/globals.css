@@ -9,9 +9,30 @@
   --line: rgba(242, 240, 235, 0.12);
   --accent: #6215b4;
   --accent-ink: #ffffff;
+  --accent-soft: #a77ce8;
+  --secondary: #1a1a19;
+  --input: rgba(242, 240, 235, 0.16);
+  --shadow: rgba(0, 0, 0, 0.85);
   --gutter: clamp(16px, 2.4vw, 40px);
   color-scheme: dark;
 }
+
+/* Tema claro (Switch do cabeçalho): a paleta escura invertida, com o mesmo roxo. */
+:root[data-theme="light"] {
+  --bg: #f2f0eb;
+  --bg-raised: #e9e6df;
+  --ink: #0a0a0a;
+  --muted: #6e6b64;
+  --faint: #cfcbc2;
+  --line: rgba(10, 10, 10, 0.12);
+  --accent-soft: #6215b4;
+  --secondary: #e6e2da;
+  --input: rgba(10, 10, 10, 0.16);
+  --shadow: rgba(30, 20, 50, 0.25);
+  color-scheme: light;
+}
+
+@custom-variant light (&:where([data-theme="light"], [data-theme="light"] *));
 
 @theme inline {
   --color-bg: var(--bg);
@@ -22,14 +43,36 @@
   --color-line: var(--line);
   --color-accent: var(--accent);
   --color-accent-ink: var(--accent-ink);
+  --color-accent-soft: var(--accent-soft);
   --font-sans: var(--font-inter-tight);
   --font-serif: var(--font-instrument-serif);
   --font-mono: var(--font-jetbrains-mono);
   --spacing-gutter: var(--gutter);
+
+  /* Tokens do shadcn (componentes colados do shadcn/21st) apontando para a
+     paleta do site. `muted` e `accent` já têm outro sentido aqui (texto
+     cinza e roxo da marca), então superfícies discretas usam `secondary`. */
+  --color-background: var(--bg);
+  --color-foreground: var(--ink);
+  --color-card: var(--bg-raised);
+  --color-card-foreground: var(--ink);
+  --color-primary: var(--accent);
+  --color-primary-foreground: var(--accent-ink);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--ink);
+  --color-muted-foreground: var(--muted);
+  --color-accent-foreground: var(--accent-ink);
+  --color-destructive: #e5484d;
+  --color-destructive-foreground: #ffffff;
+  --color-border: var(--line);
+  --color-input: var(--input);
+  --color-ring: var(--accent);
 }
 
 html {
   background: var(--bg);
+  /* Mantém o espaço da barra de rolagem quando um diálogo trava o scroll. */
+  scrollbar-gutter: stable;
 }
 
 body {
@@ -40,14 +83,26 @@ body {
   text-rendering: optimizeLegibility;
 }
 
-::selection {
-  background: var(--accent);
-  color: var(--accent-ink);
+/* Na camada base, para utilitários como `focus-visible:outline-none` (dos
+   campos do shadcn, que usam anel) conseguirem trocar o contorno. */
+@layer base {
+  ::selection {
+    background: var(--accent);
+    color: var(--accent-ink);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--ink);
+    outline-offset: 3px;
+  }
 }
 
-:focus-visible {
-  outline: 2px solid var(--ink);
-  outline-offset: 3px;
+/* Troca de tema: a tela nova se espalha por cima da antiga como água, pelo
+   clip-path que o theme.ts anima. Sem o crossfade padrão. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
 }
 
 /* Lenis */
@@ -62,19 +117,20 @@ html.lenis body {
   overscroll-behavior: contain;
 }
 .lenis.lenis-stopped {
-  overflow: clip;
+  overflow: hidden;
 }
 
 /* Estado inicial da intro. A classe js-motion é posta por um script no <head>
-   antes da primeira pintura; se o GSAP nunca rodar, o fallback mostra tudo. */
+   antes da primeira pintura; se o GSAP nunca rodar, o fallback mostra tudo.
+   Os tempos contam o loading, que vem antes da entrada. */
 .js-motion [data-intro] {
   visibility: hidden;
-  animation: intro-fallback 0s 4s forwards;
+  animation: intro-fallback 0s 7s forwards;
 }
 .js-motion [data-draw] {
   stroke-dasharray: 1;
   stroke-dashoffset: 1;
-  animation: draw-fallback 0s 6s forwards;
+  animation: draw-fallback 0s 9s forwards;
 }
 @keyframes intro-fallback {
   to {
@@ -84,6 +140,21 @@ html.lenis body {
 @keyframes draw-fallback {
   to {
     stroke-dashoffset: 0;
+  }
+}
+
+/* Loading da abertura: só com movimento (a classe js-motion). Se o JS nunca
+   chegar a rodar, ele some sozinho. */
+[data-loader] {
+  display: none;
+}
+.js-motion [data-loader] {
+  display: block;
+  animation: loader-fallback 0s 7s forwards;
+}
+@keyframes loader-fallback {
+  to {
+    visibility: hidden;
   }
 }
 
